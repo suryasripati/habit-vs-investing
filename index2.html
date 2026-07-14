@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Habit vs Invest — Live Prices</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #ffffff; color: #1a1a1a; padding: 24px 20px; max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #666; margin-bottom: 20px; }
+  .live-badge { font-size: 11px; background: #1D9E7525; color: #1D9E75; border-radius: 99px; padding: 2px 10px; margin-left: 8px; font-weight: 500; }
+  .stale-badge { font-size: 11px; background: #EF9F2720; color: #EF9F27; border-radius: 99px; padding: 2px 10px; margin-left: 8px; font-weight: 500; }
+  .loading-overlay { position:fixed; inset:0; background:#ffffff; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:999; gap:14px; }
+  .spinner { width:36px; height:36px; border:3px solid #e0e0e0; border-top-color:#1D9E75; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading-text { font-size:13px; color:#666; }
+  .manual-update { background:#f5f5f5; border-radius:10px; padding:14px 16px; margin-bottom:18px; display:none; border: 1px solid #e0e0e0; }
+  .manual-update p { font-size:12px; color:#555; margin-bottom:10px; }
+  .price-inputs { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; }
+  .price-field { display:flex; flex-direction:column; gap:4px; }
+  .price-field label { font-size:11px; color:#666; }
+  .price-field input { background:#ffffff; border:1px solid #d0d0d0; color:#1a1a1a; border-radius:6px; padding:6px 10px; width:90px; font-size:14px; font-weight:500; }
+  .price-field input:focus { outline:none; border-color:#1D9E75; }
+  .refresh-btn { background:#1D9E75; color:#fff; border:none; border-radius:6px; padding:7px 16px; font-size:13px; font-weight:500; cursor:pointer; }
+  .refresh-btn:hover { background:#17876A; }
+  .tab-bar { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .tab-btn { padding:8px 16px; font-size:13px; font-weight:500; border-radius:8px; border:1px solid #d0d0d0; background:#f9f9f9; color:#666; cursor:pointer; transition:all .15s; }
+  .tab-btn.active { background:#f0f0f0; color:#1a1a1a; border-color:#999; }
+  .chart-panel { display:none; }
+  .chart-panel.active { display:block; }
+  .stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-bottom:18px; }
+  .stat-card { background:#f9f9f9; border-radius:10px; padding:14px 16px; border: 1px solid #e8e8e8; }
+  .stat-label { font-size:12px; color:#666; margin-bottom:5px; }
+  .stat-val { font-size:22px; font-weight:500; color: #1a1a1a; }
+  .legend { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:12px; font-size:12px; color:#555; }
+  .legend span { display:flex; align-items:center; gap:6px; }
+  .dot { width:14px; height:3px; border-radius:2px; display:inline-block; }
+  canvas { border-radius:8px; }
+  .note { font-size:11px; color:#666; margin-top:14px; line-height:1.7; }
+  .note strong { color:#333; }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Fetching live stock prices…</div>
+</div>
+
+<h1>Habit vs. Investing in the Company <span id="dateBadge" class="live-badge">Loading…</span></h1>
+<p class="sub" id="priceSubtitle"> </p>
+
+<!-- Manual price entry shown only if all live fetches fail -->
+<div class="manual-update" id="manualBox">
+  <p>⚠ Live prices unavailable (network or CORS restriction). Enter today's prices manually and click Update:</p>
+  <div class="price-inputs">
+    <div class="price-field"><label>AAPL</label><input id="m-aapl" type="number" step="0.01" placeholder="312.51"></div>
+    <div class="price-field"><label>SBUX</label><input id="m-sbux" type="number" step="0.01" placeholder="101.50"></div>
+    <div class="price-field"><label>NKE</label><input id="m-nke"  type="number" step="0.01" placeholder="45.98"></div>
+    <div class="price-field"><label>NFLX</label><input id="m-nflx" type="number" step="0.01" placeholder="87.35"></div>
+    <button class="refresh-btn" onclick="applyManualPrices()">Update Charts</button>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('aapl',this)">📱 Apple (2007–<span class="cur-year"></span>)</button>
+  <button class="tab-btn" onclick="showTab('sbux',this)">☕ Starbucks (2000–<span class="cur-year"></span>)</button>
+  <button class="tab-btn" onclick="showTab('nke',this)">👟 Nike (2000–<span class="cur-year"></span>)</button>
+  <button class="tab-btn" onclick="showTab('nflx',this)">📺 Netflix (2007–<span class="cur-year"></span>)</button>
+</div>
+
+<!-- APPLE -->
+<div id="panel-aapl" class="chart-panel active">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Gross iPhone spend</div><div class="stat-val" id="aapl-gross"></div></div>
+    <div class="stat-card"><div class="stat-label">Net after trade-ins</div><div class="stat-val" id="aapl-net" style="color:#A78BFA"></div></div>
+    <div class="stat-card"><div class="stat-label">AAPL portfolio today</div><div class="stat-val" id="aapl-stock" style="color:#1D9E75"></div></div>
+    <div class="stat-card"><div class="stat-label">Return on net spend</div><div class="stat-val" id="aapl-mult"></div></div>
+    <div class="stat-card"><div class="stat-label">AAPL price</div><div class="stat-val" id="aapl-live" style="color:#A78BFA">…</div></div>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:#A78BFA"></span>Net iPhone spend (after trade-in)</span>
+    <span><span class="dot" style="background:#6D5FBF;height:0;border-top:2px dashed #6D5FBF"></span>Gross iPhone spend</span>
+    <span><span class="dot" style="background:#1D9E75"></span>AAPL portfolio (DRIP + splits)</span>
+  </div>
+  <div style="position:relative;height:320px"><canvas id="aaplChart"></canvas></div>
+  <p class="note" id="aapl-note">Habit: buy every iPhone at launch (base model). Trade-in = ~40% of prior year's launch price. Net spend invested in AAPL at launch price each year, dividends reinvested.</p>
+</div>
+
+<!-- STARBUCKS -->
+<div id="panel-sbux" class="chart-panel">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Total coffee spent</div><div class="stat-val" id="sbux-spent"></div></div>
+    <div class="stat-card"><div class="stat-label">SBUX portfolio today</div><div class="stat-val" id="sbux-stock" style="color:#1D9E75"></div></div>
+    <div class="stat-card"><div class="stat-label">Return multiple</div><div class="stat-val" id="sbux-mult"></div></div>
+    <div class="stat-card"><div class="stat-label">SBUX price</div><div class="stat-val" id="sbux-live" style="color:#378ADD">…</div></div>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:#378ADD"></span>Cumulative latte spend</span>
+    <span><span class="dot" style="background:#1D9E75"></span>SBUX portfolio (dividends reinvested)</span>
+  </div>
+  <div style="position:relative;height:320px"><canvas id="sbuxChart"></canvas></div>
+  <p class="note" id="sbux-note">Habit: 1 grande latte per day (~$2.00 in 2000 → ~$6.75 today). Annual spend invested in SBUX at Jan 1 price, dividends reinvested since 2010.</p>
+</div>
+
+<!-- NIKE -->
+<div id="panel-nke" class="chart-panel">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Total sneaker spend</div><div class="stat-val" id="nke-spent"></div></div>
+    <div class="stat-card"><div class="stat-label">NKE portfolio today</div><div class="stat-val" id="nke-stock" style="color:#1D9E75"></div></div>
+    <div class="stat-card"><div class="stat-label">Return multiple</div><div class="stat-val" id="nke-mult"></div></div>
+    <div class="stat-card"><div class="stat-label">NKE price</div><div class="stat-val" id="nke-live" style="color:#D4537E">…</div></div>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:#D4537E"></span>Cumulative sneaker spend</span>
+    <span><span class="dot" style="background:#1D9E75"></span>NKE portfolio (dividends reinvested)</span>
+  </div>
+  <div style="position:relative;height:320px"><canvas id="nkeChart"></canvas></div>
+  <p class="note" id="nke-note">Habit: 3 pairs of Nike sneakers/year (~$75/pair in 2000 → ~$130 today). Annual spend invested in NKE at Jan 1 price, dividends reinvested.</p>
+</div>
+
+<!-- NETFLIX -->
+<div id="panel-nflx" class="chart-panel">
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Total subscriptions paid</div><div class="stat-val" id="nflx-spent"></div></div>
+    <div class="stat-card"><div class="stat-label">NFLX portfolio today</div><div class="stat-val" id="nflx-stock" style="color:#1D9E75"></div></div>
+    <div class="stat-card"><div class="stat-label">Return multiple</div><div class="stat-val" id="nflx-mult"></div></div>
+    <div class="stat-card"><div class="stat-label">NFLX price</div><div class="stat-val" id="nflx-live" style="color:#EF9F27">…</div></div>
+  </div>
+  <div class="legend">
+    <span><span class="dot" style="background:#EF9F27"></span>Cumulative subscription spend</span>
+    <span><span class="dot" style="background:#1D9E75"></span>NFLX portfolio</span>
+  </div>
+  <div style="position:relative;height:320px"><canvas id="nflxChart"></canvas></div>
+  <p class="note" id="nflx-note">Habit: standard Netflix plan ($8.99/mo in 2007 → $22/mo today). Annual spend invested in NFLX at Jan 1 price. No dividends. 10-for-1 split Jan 2025.</p>
+</div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────
+const gridC = 'rgba(0,0,0,0.06)';
+const tickC = 'rgba(0,0,0,0.5)';
+const fmtK  = v => '$' + (v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1000 ? Math.round(v/1000)+'k' : Math.round(v));
+const fmtD  = v => '$' + Number(v).toFixed(2);
+
+const now      = new Date();
+const curYear  = now.getFullYear();
+const todayStr = now.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+
+document.querySelectorAll('.cur-year').forEach(el => el.textContent = curYear);
+
+function showTab(id, btn) {
+  document.querySelectorAll('.chart-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+let chartInstances = {};
+function makeChart(id, years, datasets) {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  chartInstances[id] = new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels: years, datasets },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{ callbacks:{ label: ctx => ' '+ctx.dataset.label+': $'+Math.round(ctx.parsed.y).toLocaleString() }}
+      },
+      scales:{
+        x:{ ticks:{ color:tickC, font:{size:11}, autoSkip:false, maxRotation:45 }, grid:{ color:gridC }},
+        y:{ ticks:{ color:tickC, font:{size:11}, callback:fmtK }, grid:{ color:gridC }}
+      }
+    }
+  });
+}
+
+function ds(label, data, color, fill, dash) {
+  return {
+    label, data,
+    borderColor: color,
+    backgroundColor: fill ? color+'15' : 'transparent',
+    fill: !!fill, tension:.35,
+    borderWidth: dash ? 1.5 : 2.5,
+    borderDash: dash ? [5,4] : [],
+    pointRadius: dash ? 0 : 3,
+    pointBackgroundColor: color,
+    pointBorderColor: '#ffffff',
+    pointBorderWidth: 1.5
+  };
+}
+
+// ── Fallback prices ───────────────────────────────────────────────────
+const FALLBACK = { AAPL:312.51, SBUX:101.50, NKE:45.98, NFLX:87.35 };
+
+// ── Price fetch: try multiple CORS-friendly endpoints ─────────────────
+async function tryFetch(url, parseFunc, timeoutMs=5000) {
+  try {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), timeoutMs);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(id);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return parseFunc(j);
+  } catch(e) { return null; }
+}
+
+async function fetchPrice(ticker) {
+  const encoded = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`);
+
+  // Strategy 1: allorigins CORS proxy
+  const v1 = await tryFetch(
+    `https://api.allorigins.win/get?url=${encoded}`,
+    j => {
+      const inner = JSON.parse(j.contents);
+      return inner?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+    }
+  );
+  if (v1) return parseFloat(v1.toFixed(2));
+
+  // Strategy 2: corsproxy.io
+  const v2 = await tryFetch(
+    `https://corsproxy.io/?${encoded}`,
+    j => j?.chart?.result?.[0]?.meta?.regularMarketPrice || null
+  );
+  if (v2) return parseFloat(v2.toFixed(2));
+
+  // Strategy 3: Direct Yahoo (works if hosted on a real domain, not file://)
+  const v3 = await tryFetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
+    j => j?.chart?.result?.[0]?.meta?.regularMarketPrice || null
+  );
+  if (v3) return parseFloat(v3.toFixed(2));
+
+  // Strategy 4: Yahoo v7 quote endpoint
+  const encoded2 = encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`);
+  const v4 = await tryFetch(
+    `https://api.allorigins.win/get?url=${encoded2}`,
+    j => {
+      const inner = JSON.parse(j.contents);
+      return inner?.quoteResponse?.result?.[0]?.regularMarketPrice || null;
+    }
+  );
+  if (v4) return parseFloat(v4.toFixed(2));
+
+  return null;
+}
+
+async function fetchAllPrices() {
+  const tickers = ['AAPL','SBUX','NKE','NFLX'];
+  document.getElementById('loadingText').textContent = 'Fetching live prices (AAPL, SBUX, NKE, NFLX)…';
+  const results = await Promise.all(tickers.map(t => fetchPrice(t)));
+  const prices = {};
+  let allFailed = true;
+  results.forEach((v, i) => {
+    const t = tickers[i];
+    if (v) { prices[t] = v; allFailed = false; }
+    else    { prices[t] = FALLBACK[t]; }
+  });
+  return { prices, allFailed };
+}
+
+// ── Historical base data (up to and including 2025) ───────────────────
+const aaplYearsBase   = [2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
+const aaplPriceArr    = [499,199,199,199,199,199,199,199,199,649,999,999,699,799,799,799,799,799,799];
+const aaplTradeInArr  = [0,150,100,80,80,80,75,75,75,150,250,350,350,300,380,380,400,430,430];
+const aaplPBase       = [3.66,2.57,2.73,6.45,9.93,12.39,16.69,17.23,24.35,23.86,26.89,40.52,37.71,72.80,126.55,179.08,123.77,184.74,243.85];
+const aaplDivMap      = {2012:.006,2013:.024,2014:.018,2015:.019,2016:.020,2017:.016,2018:.015,2019:.013,2020:.009,2021:.007,2022:.008,2023:.005,2024:.005,2025:.005};
+
+const sbuxYearsBase = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
+const sbuxLatteArr  = [2.00,2.10,2.20,2.30,2.50,2.75,3.00,3.30,3.55,3.45,3.80,4.00,4.10,4.20,4.40,4.60,4.70,4.80,4.95,5.10,5.25,5.50,5.75,6.00,6.25,6.50];
+const sbuxPBase     = [3.05,3.66,2.75,3.50,5.19,6.59,7.55,8.18,7.25,3.96,9.28,9.28,13.38,18.23,22.14,31.06,32.78,45.64,45.40,48.40,55.27,78.22,92.12,105.98,88.93,89.79];
+const sbuxDivMap    = {2010:.014,2011:.017,2012:.016,2013:.015,2014:.016,2015:.014,2016:.018,2017:.019,2018:.021,2019:.021,2020:.021,2021:.017,2022:.022,2023:.021,2024:.023,2025:.024};
+
+const nkeYearsBase = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
+const nkeCostArr   = [225,225,230,235,240,250,260,270,280,270,285,300,315,330,345,360,360,375,390,390,375,390,375,360,375,390];
+const nkePBase     = [5.36,5.36,4.83,4.39,6.50,6.50,8.76,8.36,12.55,10.69,13.42,13.42,17.94,20.48,22.25,34.05,41.86,54.77,46.83,57.96,68.38,95.36,131.97,156.28,113.91,103.53];
+const nkeDivMap    = {2000:.010,2001:.010,2002:.011,2003:.012,2004:.011,2005:.011,2006:.011,2007:.013,2008:.013,2009:.013,2010:.012,2011:.012,2012:.012,2013:.013,2014:.012,2015:.011,2016:.012,2017:.013,2018:.013,2019:.014,2020:.014,2021:.014,2022:.018,2023:.015,2024:.016,2025:.014};
+
+const nflxYearsBase = [2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
+const nflxSubArr    = [108,108,96,108,96,96,96,107,108,120,120,132,156,144,156,186,186,215,264];
+const nflxPBase     = [0.38,0.43,0.79,2.51,0.99,1.32,5.26,4.88,4.99,11.00,12.75,20.11,26.77,32.98,52.29,60.24,29.49,46.85,88.67];
+
+// ── Build all charts with given prices ───────────────────────────────
+function buildAll(prices, isLive) {
+  const badgeEl = document.getElementById('dateBadge');
+  badgeEl.className = isLive ? 'live-badge' : 'stale-badge';
+  badgeEl.textContent = isLive ? 'Live prices · ' + todayStr : 'Last known prices · May 28, 2026';
+
+  document.getElementById('priceSubtitle').textContent =
+    `What if instead of buying the product, you bought the stock? AAPL ${fmtD(prices.AAPL)} · SBUX ${fmtD(prices.SBUX)} · NKE ${fmtD(prices.NKE)} · NFLX ${fmtD(prices.NFLX)}`;
+
+  document.getElementById('aapl-live').textContent = fmtD(prices.AAPL);
+  document.getElementById('sbux-live').textContent = fmtD(prices.SBUX);
+  document.getElementById('nke-live').textContent  = fmtD(prices.NKE);
+  document.getElementById('nflx-live').textContent = fmtD(prices.NFLX);
+
+  const priceLabel = isLive ? `live as of ${todayStr}` : `last known (May 28, 2026)`;
+
+  // ── APPLE ──
+  const aY = [...aaplYearsBase, curYear];
+  const aP = [...aaplPBase, prices.AAPL];
+  const aDivF = {...aaplDivMap, [curYear]:0.005};
+  const aPrF  = [...aaplPriceArr, 829];
+  const aTrF  = [...aaplTradeInArr, 430];
+  let ag=0,an=0,ash=0,aG=[],aN=[],aS=[];
+  aY.forEach((yr,i)=>{
+    ag+=aPrF[i]; const net=aPrF[i]-aTrF[i]; an+=net;
+    ash+=net/aP[i]; ash+=ash*(aDivF[yr]||0);
+    aG.push(ag); aN.push(an); aS.push(Math.round(ash*aP[i]));
+  });
+  document.getElementById('aapl-gross').textContent='$'+ag.toLocaleString();
+  document.getElementById('aapl-net').textContent='$'+an.toLocaleString();
+  const aFin=aS[aS.length-1];
+  document.getElementById('aapl-stock').textContent='$'+aFin.toLocaleString();
+  document.getElementById('aapl-mult').textContent=(aFin/an).toFixed(1)+'×';
+  document.getElementById('aapl-note').innerHTML=`Habit: buy every iPhone at launch (base model). Trade-in = ~40% of prior year's launch price. Net spend invested in AAPL at launch price each year, dividends reinvested.`;
+  makeChart('aaplChart', aY, [
+    ds('Net iPhone spend (after trade-in)', aN, '#A78BFA', true, false),
+    ds('Gross iPhone spend', aG, '#6D5FBF', false, true),
+    ds('AAPL portfolio (DRIP)', aS, '#1D9E75', true, false)
+  ]);
+
+  // ── STARBUCKS ──
+  const sY=[...sbuxYearsBase,curYear], sP=[...sbuxPBase,prices.SBUX];
+  const sDivF={...sbuxDivMap,[curYear]:0.024}, sLat=[...sbuxLatteArr,6.75];
+  let sc=0,ss=0,sSp=[],sSt=[];
+  sY.forEach((yr,i)=>{
+    const ann=Math.round(sLat[i]*365); sc+=ann; ss+=ann/sP[i]; ss+=ss*(sDivF[yr]||0);
+    sSp.push(sc); sSt.push(Math.round(ss*sP[i]));
+  });
+  document.getElementById('sbux-spent').textContent='$'+sc.toLocaleString();
+  const sFin=sSt[sSt.length-1];
+  document.getElementById('sbux-stock').textContent='$'+sFin.toLocaleString();
+  document.getElementById('sbux-mult').textContent=(sFin/sc).toFixed(1)+'×';
+  document.getElementById('sbux-note').innerHTML=`Habit: 1 grande latte per day (~$2.00 in 2000 → ~$6.75 today). Annual spend invested in SBUX at Jan 1 price, dividends reinvested since 2010.`;
+  makeChart('sbuxChart', sY, [ds('Cumulative spend',sSp,'#378ADD',true), ds('SBUX portfolio',sSt,'#1D9E75',true)]);
+
+  // ── NIKE ──
+  const nY=[...nkeYearsBase,curYear], nP=[...nkePBase,prices.NKE];
+  const nDivF={...nkeDivMap,[curYear]:0.014}, nCst=[...nkeCostArr,400];
+  let nc=0,ns=0,nSp=[],nSt=[];
+  nY.forEach((yr,i)=>{
+    nc+=nCst[i]; ns+=nCst[i]/nP[i]; ns+=ns*(nDivF[yr]||0);
+    nSp.push(nc); nSt.push(Math.round(ns*nP[i]));
+  });
+  document.getElementById('nke-spent').textContent='$'+nc.toLocaleString();
+  const nFin=nSt[nSt.length-1];
+  document.getElementById('nke-stock').textContent='$'+nFin.toLocaleString();
+  document.getElementById('nke-mult').textContent=(nFin/nc).toFixed(1)+'×';
+  document.getElementById('nke-note').innerHTML=`Habit: 3 pairs of Nike sneakers/year (~$75/pair in 2000 → ~$130 today). Annual spend invested in NKE at Jan 1 price, dividends reinvested.`;
+  makeChart('nkeChart', nY, [ds('Cumulative spend',nSp,'#D4537E',true), ds('NKE portfolio',nSt,'#1D9E75',true)]);
+
+  // ── NETFLIX ──
+  const fY=[...nflxYearsBase,curYear], fP=[...nflxPBase,prices.NFLX], fSub=[...nflxSubArr,264];
+  let fc=0,fs=0,fSp=[],fSt=[];
+  fY.forEach((yr,i)=>{ fc+=fSub[i]; fs+=fSub[i]/fP[i]; fSp.push(fc); fSt.push(Math.round(fs*fP[i])); });
+  document.getElementById('nflx-spent').textContent='$'+fc.toLocaleString();
+  const fFin=fSt[fSt.length-1];
+  document.getElementById('nflx-stock').textContent='$'+fFin.toLocaleString();
+  document.getElementById('nflx-mult').textContent=(fFin/fc).toFixed(1)+'×';
+  document.getElementById('nflx-note').innerHTML=`Habit: standard Netflix plan ($8.99/mo in 2007 → $22/mo today). Annual spend invested in NFLX at Jan 1 price. No dividends. 10-for-1 split Jan 2025.`;
+  makeChart('nflxChart', fY, [ds('Cumulative spend',fSp,'#EF9F27',true), ds('NFLX portfolio',fSt,'#1D9E75',true)]);
+}
+
+// ── Manual price override (shown when live fetch fails) ───────────────
+function applyManualPrices() {
+  const prices = {
+    AAPL: parseFloat(document.getElementById('m-aapl').value) || FALLBACK.AAPL,
+    SBUX: parseFloat(document.getElementById('m-sbux').value) || FALLBACK.SBUX,
+    NKE:  parseFloat(document.getElementById('m-nke').value)  || FALLBACK.NKE,
+    NFLX: parseFloat(document.getElementById('m-nflx').value) || FALLBACK.NFLX,
+  };
+  document.getElementById('manualBox').style.display = 'none';
+  buildAll(prices, true);
+}
+
+// ── Init ─────���───────────────────────────────────────────────────────
+(async () => {
+  const { prices, allFailed } = await fetchAllPrices();
+
+  if (allFailed) {
+    // Show manual entry box with fallback prices pre-filled
+    const box = document.getElementById('manualBox');
+    box.style.display = 'block';
+    document.getElementById('m-aapl').value = FALLBACK.AAPL;
+    document.getElementById('m-sbux').value = FALLBACK.SBUX;
+    document.getElementById('m-nke').value  = FALLBACK.NKE;
+    document.getElementById('m-nflx').value = FALLBACK.NFLX;
+  }
+
+  buildAll(prices, !allFailed);
+  document.getElementById('loadingOverlay').style.display = 'none';
+})();
+</script>
+</body>
+</html>
