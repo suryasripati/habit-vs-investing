@@ -102,7 +102,7 @@
     <span><span class="dot" style="background:#1D9E75"></span>SBUX portfolio (dividends reinvested)</span>
   </div>
   <div style="position:relative;height:320px"><canvas id="sbuxChart"></canvas></div>
-  <p class="note" id="sbux-note">Habit: 1 grande latte per day at prevailing Starbucks price (~$2.00 in 2000 → ~$6.75 today). Annual spend invested in SBUX at Jan 1 price. Dividends reinvested since 2010.</p>
+  <p class="note" id="sbux-note">Habit: 1 grande latte per day (~$2.00 in 2000 → ~$6.75 today). Annual spend invested in SBUX at Jan 1 price, dividends reinvested since 2010.</p>
 </div>
 
 <!-- NIKE -->
@@ -118,7 +118,7 @@
     <span><span class="dot" style="background:#1D9E75"></span>NKE portfolio (dividends reinvested)</span>
   </div>
   <div style="position:relative;height:320px"><canvas id="nkeChart"></canvas></div>
-  <p class="note" id="nke-note">Habit: 3 pairs of Nike sneakers/year at average retail (~$75/pair in 2000 → ~$130 today). Annual spend invested in NKE at Jan 1 price, dividends reinvested.</p>
+  <p class="note" id="nke-note">Habit: 3 pairs of Nike sneakers/year (~$75/pair in 2000 → ~$130 today). Annual spend invested in NKE at Jan 1 price, dividends reinvested.</p>
 </div>
 
 <!-- NETFLIX -->
@@ -134,7 +134,7 @@
     <span><span class="dot" style="background:#1D9E75"></span>NFLX portfolio</span>
   </div>
   <div style="position:relative;height:320px"><canvas id="nflxChart"></canvas></div>
-  <p class="note" id="nflx-note">Habit: standard Netflix plan ($8.99/mo in 2007 → $22/mo today). Annual spend invested in NFLX at Jan 1 price. Netflix pays no dividends. 10-for-1 split in Jan 2025.</p>
+  <p class="note" id="nflx-note">Habit: standard Netflix plan ($8.99/mo in 2007 → $22/mo today). Annual spend invested in NFLX at Jan 1 price. No dividends. 10-for-1 split Jan 2025.</p>
 </div>
 
 <script>
@@ -210,42 +210,58 @@ async function tryFetch(url, parseFunc, timeoutMs=5000) {
 }
 
 async function fetchPrice(ticker) {
-  const encoded = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`);
+  const yahoUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
 
-  // Strategy 1: allorigins CORS proxy
+  // Strategy 1: corsproxy.io (often more reliable)
   const v1 = await tryFetch(
-    `https://api.allorigins.win/get?url=${encoded}`,
-    j => {
-      const inner = JSON.parse(j.contents);
-      return inner?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
-    }
+    `https://corsproxy.io/?${encodeURIComponent(yahoUrl)}`,
+    j => j?.chart?.result?.[0]?.meta?.regularMarketPrice || null,
+    6000
   );
   if (v1) return parseFloat(v1.toFixed(2));
 
-  // Strategy 2: corsproxy.io
+  // Strategy 2: allorigins CORS proxy
   const v2 = await tryFetch(
-    `https://corsproxy.io/?${encoded}`,
-    j => j?.chart?.result?.[0]?.meta?.regularMarketPrice || null
+    `https://api.allorigins.win/get?url=${encodeURIComponent(yahoUrl)}`,
+    j => {
+      try {
+        const inner = JSON.parse(j.contents);
+        return inner?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+      } catch(e) { return null; }
+    },
+    6000
   );
   if (v2) return parseFloat(v2.toFixed(2));
 
-  // Strategy 3: Direct Yahoo (works if hosted on a real domain, not file://)
+  // Strategy 3: Direct Yahoo v8 (works on real domain)
   const v3 = await tryFetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-    j => j?.chart?.result?.[0]?.meta?.regularMarketPrice || null
+    yahoUrl,
+    j => j?.chart?.result?.[0]?.meta?.regularMarketPrice || null,
+    6000
   );
   if (v3) return parseFloat(v3.toFixed(2));
 
-  // Strategy 4: Yahoo v7 quote endpoint
-  const encoded2 = encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`);
+  // Strategy 4: Yahoo v7 quote endpoint via allorigins
+  const yahooV7 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
   const v4 = await tryFetch(
-    `https://api.allorigins.win/get?url=${encoded2}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(yahooV7)}`,
     j => {
-      const inner = JSON.parse(j.contents);
-      return inner?.quoteResponse?.result?.[0]?.regularMarketPrice || null;
-    }
+      try {
+        const inner = JSON.parse(j.contents);
+        return inner?.quoteResponse?.result?.[0]?.regularMarketPrice || null;
+      } catch(e) { return null; }
+    },
+    6000
   );
   if (v4) return parseFloat(v4.toFixed(2));
+
+  // Strategy 5: Try corsproxy with v7 endpoint
+  const v5 = await tryFetch(
+    `https://corsproxy.io/?${encodeURIComponent(yahooV7)}`,
+    j => j?.quoteResponse?.result?.[0]?.regularMarketPrice || null,
+    6000
+  );
+  if (v5) return parseFloat(v5.toFixed(2));
 
   return null;
 }
@@ -279,7 +295,7 @@ const sbuxDivMap    = {2010:.014,2011:.017,2012:.016,2013:.015,2014:.016,2015:.0
 const nkeYearsBase = [2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
 const nkeCostArr   = [225,225,230,235,240,250,260,270,280,270,285,300,315,330,345,360,360,375,390,390,375,390,375,360,375,390];
 const nkePBase     = [5.36,5.36,4.83,4.39,6.50,6.50,8.76,8.36,12.55,10.69,13.42,13.42,17.94,20.48,22.25,34.05,41.86,54.77,46.83,57.96,68.38,95.36,131.97,156.28,113.91,103.53];
-const nkeDivMap    = {2000:.010,2001:.010,2002:.011,2003:.012,2004:.011,2005:.011,2006:.011,2007:.013,2008:.013,2009:.013,2010:.012,2011:.012,2012:.012,2013:.013,2014:.012,2015:.011,2016:.012,2017:.012,2018:.015,2019:.016,2020:.019,2021:.018,2022:.023,2023:.019,2024:.014,2025:.014};
+const nkeDivMap    = {2000:.010,2001:.010,2002:.011,2003:.012,2004:.011,2005:.011,2006:.011,2007:.013,2008:.013,2009:.013,2010:.012,2011:.012,2012:.012,2013:.013,2014:.012,2015:.011,2016:.012,2017:.014,2018:.016,2019:.016,2020:.016,2021:.012,2022:.016,2023:.013,2024:.011,2025:.014};
 
 const nflxYearsBase = [2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025];
 const nflxSubArr    = [108,108,96,108,96,96,96,107,108,120,120,132,156,144,156,186,186,215,264];
@@ -352,7 +368,7 @@ function buildAll(prices, isLive) {
   const nFin=nSt[nSt.length-1];
   document.getElementById('nke-stock').textContent='$'+nFin.toLocaleString();
   document.getElementById('nke-mult').textContent=(nFin/nc).toFixed(1)+'×';
-  document.getElementById('nke-note').innerHTML=`Habit: 3 pairs of Nike sneakers/year (~$75/pair in 2000 → ~$130 today). Annual spend invested in NKE at Jan 1 price, dividends reinvested. NKE peaked ~$180 in 2021.`;
+  document.getElementById('nke-note').innerHTML=`Habit: 3 pairs of Nike sneakers/year (~$75/pair in 2000 → ~$130 today). Annual spend invested in NKE at Jan 1 price, dividends reinvested.`;
   makeChart('nkeChart', nY, [ds('Cumulative spend',nSp,'#D4537E',true), ds('NKE portfolio',nSt,'#1D9E75',true)]);
 
   // ── NETFLIX ──
