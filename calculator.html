@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Habit vs Invest — Custom Calculator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1a1a1a; padding: 28px 20px; max-width: 940px; margin: 0 auto; }
+
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 5px; color: #111; }
+.sub { font-size: 13px; color: #777; margin-bottom: 26px; line-height: 1.6; }
+
+/* Preset bar */
+.preset-label { font-size: 12px; color: #999; display:flex; align-items:center; margin-right:4px; }
+.preset-btn { padding: 6px 14px; font-size: 12px; font-weight: 500; border-radius: 99px; border: 1px solid #ddd; background: #fff; color: #555; cursor: pointer; transition: all .15s; }
+.preset-btn:hover { border-color: #1D9E75; color: #1D9E75; background: #f0fdf8; }
+
+/* Cards */
+.entries-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.entry-card { background: #fff; border: 1.5px solid #e5e5e5; border-radius: 16px; padding: 20px; transition: border-color .2s; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.entry-card.active { border-color: #d0d0d0; }
+.entry-card.disabled { opacity: .38; pointer-events: none; }
+.card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.card-num { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: .07em; display:flex; align-items:center; gap:6px; }
+.color-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+.card-toggle { font-size: 12px; color: #1D9E75; cursor: pointer; background: none; border: none; padding: 0; font-weight:500; }
+
+.field { margin-bottom: 12px; }
+.field label { font-size: 11px; color: #888; display: block; margin-bottom: 5px; letter-spacing: .04em; font-weight:600; text-transform:uppercase; }
+.field input, .field select {
+  width: 100%; background: #fafafa; border: 1.5px solid #e0e0e0; color: #1a1a1a;
+  border-radius: 8px; padding: 9px 12px; font-size: 14px; transition: border-color .15s;
+}
+.field input:focus, .field select:focus { outline: none; border-color: #1D9E75; background:#fff; }
+.field input::placeholder { color: #bbb; }
+.field select option { background: #fff; color:#1a1a1a; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Ticker autocomplete */
+.ticker-wrap { position: relative; }
+.autocomplete-list { position:absolute; top:100%; left:0; right:0; background:#fff; border:1.5px solid #e0e0e0; border-top:none; border-radius:0 0 8px 8px; max-height:200px; overflow-y:auto; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,.1); display:none; }
+.autocomplete-list.open { display:block; }
+.ac-item { padding:9px 12px; font-size:13px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; }
+.ac-item:last-child { border-bottom:none; }
+.ac-item:hover, .ac-item.selected { background:#f0fdf8; }
+.ac-ticker { font-weight:600; color:#1D9E75; font-size:12px; margin-left:8px; white-space:nowrap; }
+.ac-exch { font-size:11px; color:#aaa; margin-left:6px; }
+.ac-name { color:#333; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.ticker-status { font-size:11px; margin-top:5px; min-height:16px; }
+.ticker-status.ok { color:#1D9E75; }
+.ticker-status.err { color:#EF4444; }
+.ticker-status.loading { color:#888; }
+.verified-name { font-size:11px; color:#1D9E75; min-height:16px; margin-top:-4px; margin-bottom:6px; }
+
+/* Run */
+.run-wrap { text-align:center; margin-bottom:32px; }
+.run-btn { padding:13px 52px; background:#1D9E75; color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; transition:background .15s; box-shadow:0 2px 8px rgba(29,158,117,.3); }
+.run-btn:hover { background:#17876A; }
+.run-btn:disabled { background:#a0cfc4; cursor:not-allowed; box-shadow:none; }
+
+/* Results */
+.results { display:none; }
+.results.visible { display:block; }
+.results-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px; }
+.results-title { font-size:17px; font-weight:700; color:#111; }
+.reset-btn { font-size:12px; color:#888; background:none; border:none; cursor:pointer; }
+.reset-btn:hover { color:#1a1a1a; }
+
+/* Tabs */
+.tab-bar { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+.tab-btn { padding:7px 16px; font-size:13px; font-weight:500; border-radius:8px; border:1.5px solid #e0e0e0; background:#fff; color:#777; cursor:pointer; transition:all .15s; }
+.tab-btn.active { background:#1D9E75; color:#fff; border-color:#1D9E75; }
+.chart-panel { display:none; }
+.chart-panel.active { display:block; }
+
+/* Stat cards */
+.stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:18px; }
+.stat-card { background:#fff; border:1.5px solid #ebebeb; border-radius:10px; padding:13px 15px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+.stat-label { font-size:11px; color:#999; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.stat-val { font-size:20px; font-weight:600; color:#111; }
+
+.legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:12px; font-size:12px; color:#777; }
+.legend span { display:flex; align-items:center; gap:5px; }
+.dot { width:12px; height:3px; border-radius:2px; display:inline-block; }
+
+.chart-wrap { background:#fff; border:1.5px solid #ebebeb; border-radius:12px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.05); }
+.note { font-size:11px; color:#999; margin-top:14px; line-height:1.7; }
+.note strong { color:#666; }
+
+/* Loading */
+.chart-loading { display:flex; align-items:center; justify-content:center; height:280px; gap:12px; color:#aaa; font-size:13px; }
+.spinner-sm { width:22px; height:22px; border:2px solid #e5e5e5; border-top-color:#1D9E75; border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.error-msg { background:#fff5f5; border:1.5px solid #fecaca; border-radius:8px; padding:12px 16px; font-size:12px; color:#b91c1c; margin-bottom:16px; display:none; }
+.panel-error { padding:20px; color:#b91c1c; font-size:13px; background:#fff5f5; border-radius:8px; }
+</style>
+</head>
+<body>
+
+<h1>Habit vs. Investing in the Company</h1>
+<p class="sub">What if instead of buying the product, you bought the stock? Enter up to 4 habits, search for the company ticker, and see how your portfolio would have grown — every year, dividends reinvested.</p>
+
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:22px;">
+  <span class="preset-label">Quick fill →</span>
+  <button class="preset-btn" onclick="loadPreset('india')">🇮🇳 India</button>
+  <button class="preset-btn" onclick="loadPreset('us')">🇺🇸 United States</button>
+  <button class="preset-btn" onclick="loadPreset('global')">🌍 Global Mix</button>
+</div>
+
+<div class="entries-grid" id="entriesGrid"></div>
+<div class="error-msg" id="globalError"></div>
+
+<div class="run-wrap">
+  <button class="run-btn" id="runBtn" onclick="runAnalysis()">Calculate → Show Charts</button>
+</div>
+
+<div class="results" id="results">
+  <div class="results-header">
+    <div class="results-title">Your Habit vs. Invest Analysis</div>
+    <button class="reset-btn" onclick="resetResults()">← Edit inputs</button>
+  </div>
+  <div class="tab-bar" id="tabBar"></div>
+  <div id="chartPanels"></div>
+</div>
+
+<script>
+const CARD_COLORS = ['#7C3AED','#2563EB','#059669','#D97706'];
+const curYear  = new Date().getFullYear();
+const todayStr = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+const CURRENCIES = [
+  { sym:'$',   label:'$ — USD (US Dollar)' },
+  { sym:'₹',   label:'₹ — INR (Indian Rupee)' },
+  { sym:'£',   label:'£ — GBP (British Pound)' },
+  { sym:'€',   label:'€ — EUR (Euro)' },
+  { sym:'¥',   label:'¥ — JPY (Japanese Yen)' },
+  { sym:'A$',  label:'A$ — AUD (Australian Dollar)' },
+  { sym:'C$',  label:'C$ — CAD (Canadian Dollar)' },
+  { sym:'S$',  label:'S$ — SGD (Singapore Dollar)' },
+  { sym:'AED', label:'AED — UAE Dirham' },
+  { sym:'CHF', label:'CHF — Swiss Franc' },
+];
+
+const PRESETS = {
+  india: [
+    { name:'Airtel Mobile Bill',  ticker:'BHARTIARTL.NS', spend:599,  freq:'monthly', startYear:2010, currency:'₹' },
+    { name:'Reliance Jio Bill',   ticker:'RELIANCE.NS',   spend:299,  freq:'monthly', startYear:2016, currency:'₹' },
+    { name:'ITC Cigarettes',      ticker:'ITC.NS',        spend:400,  freq:'monthly', startYear:2010, currency:'₹' },
+    { name:'Tata Power Bill',     ticker:'TATAPOWER.NS',  spend:1200, freq:'monthly', startYear:2015, currency:'₹' },
+  ],
+  us: [
+    { name:'iPhone Upgrade',   ticker:'AAPL', spend:799,  freq:'yearly',  startYear:2010, currency:'$' },
+    { name:'Netflix Sub',      ticker:'NFLX', spend:15,   freq:'monthly', startYear:2012, currency:'$' },
+    { name:'Starbucks Latte',  ticker:'SBUX', spend:5.5,  freq:'daily',   startYear:2010, currency:'$' },
+    { name:'Nike Sneakers',    ticker:'NKE',  spend:130,  freq:'monthly', startYear:2010, currency:'$' },
+  ],
+  global: [
+    { name:'Apple iPhone',    ticker:'AAPL',        spend:999,  freq:'yearly',  startYear:2012, currency:'$' },
+    { name:'Airtel Mobile',   ticker:'BHARTIARTL.NS', spend:599, freq:'monthly', startYear:2015, currency:'₹' },
+    { name:'Spotify Sub',     ticker:'SPOT',        spend:11,   freq:'monthly', startYear:2018, currency:'$' },
+    { name:'Amazon Prime',    ticker:'AMZN',        spend:14.99,freq:'monthly', startYear:2015, currency:'$' },
+  ]
+};
+
+// ── Build cards ───────────────────────────────────────────────────────
+function buildCards() {
+  const grid = document.getElementById('entriesGrid');
+  grid.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const color = CARD_COLORS[i];
+    const currOpts = CURRENCIES.map(c => `<option value="${c.sym}">${c.label}</option>`).join('');
+    grid.innerHTML += `
+    <div class="entry-card ${i<2?'active':'disabled'}" id="card-${i}">
+      <div class="card-header">
+        <span class="card-num"><span class="color-dot" style="background:${color}"></span>Entry ${i+1}</span>
+        <button class="card-toggle" onclick="toggleCard(${i})">${i<2?'Disable':'Enable'}</button>
+      </div>
+
+      <div class="field">
+        <label>Habit / Product Name</label>
+        <input id="name-${i}" type="text" placeholder="e.g. Airtel Mobile Bill">
+      </div>
+
+      <div class="field">
+        <label>Company Stock (search by name or ticker)</label>
+        <div class="ticker-wrap">
+          <input id="ticker-${i}" type="text" placeholder="e.g. Airtel or BHARTIARTL.NS"
+            autocomplete="off"
+            oninput="onTickerInput(${i})"
+            onkeydown="onTickerKey(event,${i})"
+            onblur="delayCloseAC(${i})">
+          <div class="autocomplete-list" id="ac-${i}"></div>
+        </div>
+        <div class="ticker-status" id="ticker-status-${i}"></div>
+        <div class="verified-name" id="verified-name-${i}"></div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Spend Amount</label>
+          <input id="spend-${i}" type="number" placeholder="e.g. 599" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>Frequency</label>
+          <select id="freq-${i}">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly" selected>Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Start Year</label>
+          <input id="start-${i}" type="number" placeholder="e.g. 2010" min="1990" max="${curYear}" value="2015">
+        </div>
+        <div class="field">
+          <label>Currency</label>
+          <select id="currency-${i}">${currOpts}</select>
+        </div>
+      </div>
+
+      <input type="hidden" id="resolved-ticker-${i}">
+    </div>`;
+  }
+}
+
+function toggleCard(i) {
+  const card = document.getElementById('card-'+i);
+  const btn  = card.querySelector('.card-toggle');
+  const dis  = card.classList.contains('disabled');
+  card.classList.toggle('disabled', !dis);
+  card.classList.toggle('active', dis);
+  btn.textContent = dis ? 'Disable' : 'Enable';
+}
+
+function loadPreset(key) {
+  const p = PRESETS[key];
+  for (let i = 0; i < 4; i++) {
+    const card = document.getElementById('card-'+i);
+    card.classList.remove('disabled'); card.classList.add('active');
+    card.querySelector('.card-toggle').textContent = 'Disable';
+    document.getElementById('name-'+i).value = p[i].name;
+    document.getElementById('ticker-'+i).value = p[i].ticker;
+    document.getElementById('resolved-ticker-'+i).value = p[i].ticker;
+    document.getElementById('spend-'+i).value = p[i].spend;
+    document.getElementById('freq-'+i).value = p[i].freq;
+    document.getElementById('start-'+i).value = p[i].startYear;
+    const sel = document.getElementById('currency-'+i);
+    sel.value = p[i].currency;
+    if (!sel.value) sel.value = '$';
+    document.getElementById('ticker-status-'+i).textContent = '';
+    document.getElementById('ticker-status-'+i).className = 'ticker-status';
+    document.getElementById('verified-name-'+i).textContent = '';
+    document.getElementById('ac-'+i).classList.remove('open');
+  }
+}
+
+// ── Autocomplete ──────────────────────────────────────────────────────
+let acTimers = {}, acSelected = {}, acResults = {};
+
+async function onTickerInput(i) {
+  const val = document.getElementById('ticker-'+i).value.trim();
+  document.getElementById('resolved-ticker-'+i).value = '';
+  document.getElementById('verified-name-'+i).textContent = '';
+  document.getElementById('ticker-status-'+i).textContent = '';
+  if (val.length < 2) { closeAC(i); return; }
+  clearTimeout(acTimers[i]);
+  acTimers[i] = setTimeout(() => searchTickers(i, val), 350);
+}
+
+async function searchTickers(i, query) {
+  const statusEl = document.getElementById('ticker-status-'+i);
+  statusEl.className = 'ticker-status loading';
+  statusEl.textContent = 'Searching…';
+
+  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0&listsCount=0`;
+  let results = [];
+  try {
+    const data = await proxyFetch(url, j => j?.quotes || []);
+    if (data) results = data.filter(q => q.symbol && (q.quoteType === 'EQUITY' || q.quoteType === 'ETF'));
+  } catch(e) {}
+
+  statusEl.textContent = '';
+  acResults[i] = results;
+  acSelected[i] = -1;
+
+  const acEl = document.getElementById('ac-'+i);
+  if (!results.length) { closeAC(i); return; }
+
+  acEl.innerHTML = results.map((r, idx) => `
+    <div class="ac-item" id="ac-item-${i}-${idx}" onmousedown="selectAC(${i},${idx})">
+      <span class="ac-name">${r.longname || r.shortname || r.symbol}</span>
+      <span>
+        <span class="ac-ticker">${r.symbol}</span>
+        <span class="ac-exch">${r.exchDisp || r.exchange || ''}</span>
+      </span>
+    </div>`).join('');
+  acEl.classList.add('open');
+}
+
+function selectAC(i, idx) {
+  const r = acResults[i][idx];
+  if (!r) return;
+  document.getElementById('ticker-'+i).value = r.symbol;
+  document.getElementById('resolved-ticker-'+i).value = r.symbol;
+  document.getElementById('verified-name-'+i).textContent = `✓ ${r.longname || r.shortname || ''} (${r.exchDisp || ''})`;
+  document.getElementById('ticker-status-'+i).textContent = '';
+  document.getElementById('ticker-status-'+i).className = 'ticker-status';
+  closeAC(i);
+}
+
+function onTickerKey(e, i) {
+  const acEl = document.getElementById('ac-'+i);
+  if (!acEl.classList.contains('open')) return;
+  const items = acEl.querySelectorAll('.ac-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    acSelected[i] = Math.min((acSelected[i]||0)+1, items.length-1);
+    items.forEach((el,idx) => el.classList.toggle('selected', idx===acSelected[i]));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    acSelected[i] = Math.max((acSelected[i]||0)-1, 0);
+    items.forEach((el,idx) => el.classList.toggle('selected', idx===acSelected[i]));
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (acSelected[i] >= 0) selectAC(i, acSelected[i]);
+    else closeAC(i);
+  } else if (e.key === 'Escape') {
+    closeAC(i);
+  }
+}
+
+function closeAC(i) { document.getElementById('ac-'+i).classList.remove('open'); }
+function delayCloseAC(i) { setTimeout(() => closeAC(i), 180); }
+
+// ── Fetch helpers ─────────────────────────────────────────────────────
+async function proxyFetch(url, parseFunc, timeout=8000) {
+  const strategies = [
+    async () => {
+      const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        { signal: AbortSignal.timeout(timeout) });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return parseFunc(JSON.parse(j.contents));
+    },
+    async () => {
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`,
+        { signal: AbortSignal.timeout(timeout) });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return parseFunc(j);
+    },
+    async () => {
+      const r = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return parseFunc(j);
+    }
+  ];
+  for (const strategy of strategies) {
+    try { const v = await strategy(); if (v !== null && v !== undefined) return v; }
+    catch(e) { /* try next */ }
+  }
+  return null;
+}
+
+async function fetchYahooAnnual(ticker, startYear) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1mo&range=max`;
+  return await proxyFetch(url, j => {
+    const result = j?.chart?.result?.[0];
+    if (!result) return null;
+    const timestamps = result.timestamp || [];
+    const closes = result.indicators?.adjclose?.[0]?.adjclose
+                || result.indicators?.quote?.[0]?.close || [];
+    const meta = result.meta;
+
+    // Build year → earliest-available price map
+    const yearPriceMap = {};
+    timestamps.forEach((ts, idx) => {
+      if (!closes[idx] || closes[idx] <= 0) return;
+      const d = new Date(ts * 1000);
+      const yr = d.getFullYear();
+      if (yr < startYear || yr > curYear) return;
+      if (!yearPriceMap[yr]) yearPriceMap[yr] = closes[idx];
+    });
+
+    // Fill forward any missing years
+    for (let y = startYear; y <= curYear; y++) {
+      if (!yearPriceMap[y] && yearPriceMap[y-1]) yearPriceMap[y] = yearPriceMap[y-1];
+    }
+
+    yearPriceMap[curYear] = meta?.regularMarketPrice || yearPriceMap[curYear];
+
+    const detectedCurrency = meta?.currency === 'INR' ? '₹'
+      : meta?.currency === 'GBP' ? '£'
+      : meta?.currency === 'EUR' ? '€' : null;
+
+    return {
+      yearMap: yearPriceMap,
+      currentPrice: meta?.regularMarketPrice,
+      detectedCurrency,
+      companyName: meta?.longName || meta?.shortName || ticker
+    };
+  });
+}
+
+function annualSpend(amount, freq) {
+  return amount * ({ daily:365, weekly:52, monthly:12, yearly:1 }[freq] || 12);
+}
+
+// ── Run analysis ──────────────────────────────────────────────────────
+let chartInstances = {};
+
+async function runAnalysis() {
+  const btn = document.getElementById('runBtn');
+  const errEl = document.getElementById('globalError');
+  errEl.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Fetching data…';
+
+  const entries = [];
+  for (let i = 0; i < 4; i++) {
+    const card = document.getElementById('card-'+i);
+    if (card.classList.contains('disabled')) continue;
+    const ticker  = (document.getElementById('resolved-ticker-'+i).value
+                  || document.getElementById('ticker-'+i).value).trim().toUpperCase();
+    const name    = document.getElementById('name-'+i).value.trim() || ticker;
+    const spend   = parseFloat(document.getElementById('spend-'+i).value) || 0;
+    const freq    = document.getElementById('freq-'+i).value;
+    const start   = parseInt(document.getElementById('start-'+i).value) || 2010;
+    const curr    = document.getElementById('currency-'+i).value || '$';
+    if (!ticker || !spend) continue;
+    entries.push({ ticker, name, spend, freq, start, currency:curr, colorIdx:i });
+  }
+
+  if (!entries.length) {
+    errEl.textContent = 'Please fill in at least one entry with a company and spend amount.';
+    errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Calculate → Show Charts'; return;
+  }
+
+  document.getElementById('results').classList.add('visible');
+  document.getElementById('tabBar').innerHTML = '';
+  document.getElementById('chartPanels').innerHTML = '';
+
+  entries.forEach((e, ei) => {
+    const color = CARD_COLORS[e.colorIdx];
+    document.getElementById('tabBar').innerHTML +=
+      `<button class="tab-btn ${ei===0?'active':''}" id="tab-${ei}" onclick="showTab(${ei})">${e.name}</button>`;
+    document.getElementById('chartPanels').innerHTML += `
+      <div class="chart-panel ${ei===0?'active':''}" id="panel-${ei}">
+        <div class="chart-loading" id="loading-${ei}">
+          <div class="spinner-sm"></div> Fetching ${e.ticker} price history…
+        </div>
+        <div style="display:none" id="content-${ei}">
+          <div class="stat-grid">
+            <div class="stat-card"><div class="stat-label">Total Habit Spend</div><div class="stat-val" id="st-spend-${ei}"></div></div>
+            <div class="stat-card"><div class="stat-label">Portfolio Value Today</div><div class="stat-val" id="st-port-${ei}" style="color:#059669"></div></div>
+            <div class="stat-card"><div class="stat-label">Return Multiple</div><div class="stat-val" id="st-mult-${ei}"></div></div>
+            <div class="stat-card"><div class="stat-label">Current Stock Price</div><div class="stat-val" id="st-price-${ei}" style="color:${color}"></div></div>
+            <div class="stat-card"><div class="stat-label">Period</div><div class="stat-val" id="st-period-${ei}" style="font-size:15px;color:#555"></div></div>
+          </div>
+          <div class="legend">
+            <span><span class="dot" style="background:${color}"></span>Cumulative habit spend</span>
+            <span><span class="dot" style="background:#059669"></span>Stock portfolio value</span>
+          </div>
+          <div class="chart-wrap">
+            <div style="position:relative;height:300px"><canvas id="chart-${ei}"></canvas></div>
+          </div>
+          <p class="note" id="note-${ei}"></p>
+        </div>
+        <div style="display:none" class="panel-error" id="error-${ei}"></div>
+      </div>`;
+  });
+
+  await Promise.all(entries.map((e, ei) => renderEntry(e, ei)));
+
+  btn.disabled = false; btn.textContent = 'Recalculate';
+  document.getElementById('results').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function renderEntry(e, ei) {
+  const color = CARD_COLORS[e.colorIdx];
+  try {
+    const data = await fetchYahooAnnual(e.ticker, e.start);
+    document.getElementById('loading-'+ei).style.display = 'none';
+    if (!data?.yearMap) throw new Error('No price data returned — try a different ticker format');
+
+    const { yearMap, currentPrice, detectedCurrency, companyName } = data;
+    const cur = e.currency || detectedCurrency || '$';
+
+    const years = [];
+    for (let y = e.start; y <= curYear; y++) years.push(y);
+
+    let cumSpend=0, shares=0;
+    const spendArr=[], portArr=[];
+    years.forEach(yr => {
+      cumSpend += annualSpend(e.spend, e.freq);
+      const price = yearMap[yr];
+      if (price > 0) {
+        shares += annualSpend(e.spend, e.freq) / price;
+        shares += shares * 0.006; // ~0.6% conservative div reinvestment
+      }
+      spendArr.push(Math.round(cumSpend));
+      portArr.push(price ? Math.round(shares * price) : (portArr[portArr.length-1]||0));
+    });
+
+    const finalSpend = spendArr[spendArr.length-1];
+    const finalPort  = portArr[portArr.length-1];
+    const fmtV = v => cur + (
+      cur==='₹' ? (v>=1e7?(v/1e7).toFixed(2)+' Cr':v>=1e5?(v/1e5).toFixed(1)+' L':Math.round(v).toLocaleString('en-IN'))
+                : (v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1000?Math.round(v/1000)+'k':Math.round(v).toLocaleString())
+    );
+
+    document.getElementById('st-spend-'+ei).textContent = fmtV(finalSpend);
+    document.getElementById('st-port-'+ei).textContent  = fmtV(finalPort);
+    document.getElementById('st-mult-'+ei).textContent  = finalSpend>0 ? (finalPort/finalSpend).toFixed(1)+'×' : '—';
+    document.getElementById('st-price-'+ei).textContent = cur + (currentPrice||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('st-period-'+ei).textContent = e.start+' – '+curYear;
+    document.getElementById('note-'+ei).innerHTML =
+      `Habit: ${e.name} — ${cur}${e.spend} ${e.freq} from ${e.start}. ` +
+      `Each year's spend invested in <strong>${companyName} (${e.ticker})</strong> at that year's price, dividends conservatively reinvested (~0.6%/yr). ` +
+      `<strong>Current price: ${cur}${(currentPrice||0).toFixed(2)} as of ${todayStr}.</strong>`;
+
+    document.getElementById('content-'+ei).style.display = 'block';
+
+    const gridC = 'rgba(0,0,0,0.06)', tickC = '#999';
+    const fmtK = v => cur + (
+      cur==='₹' ? (v>=1e7?(v/1e7).toFixed(1)+'Cr':v>=1e5?(v/1e5).toFixed(1)+'L':Math.round(v/1000)+'k')
+                : (v>=1e6?(v/1e6).toFixed(1)+'M':v>=1000?Math.round(v/1000)+'k':Math.round(v))
+    );
+    if (chartInstances['c'+ei]) chartInstances['c'+ei].destroy();
+    chartInstances['c'+ei] = new Chart(document.getElementById('chart-'+ei), {
+      type:'line',
+      data:{ labels:years, datasets:[
+        { label:'Cumulative habit spend', data:spendArr,
+          borderColor:color, backgroundColor:color+'18', fill:true, tension:.35,
+          borderWidth:2.5, pointRadius:3, pointBackgroundColor:color, pointBorderColor:'#fff', pointBorderWidth:1.5 },
+        { label:'Stock portfolio value', data:portArr,
+          borderColor:'#059669', backgroundColor:'#05966912', fill:true, tension:.35,
+          borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#059669', pointBorderColor:'#fff', pointBorderWidth:1.5 }
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{ legend:{display:false},
+          tooltip:{ backgroundColor:'#fff', titleColor:'#111', bodyColor:'#333',
+            borderColor:'#e5e5e5', borderWidth:1,
+            callbacks:{ label: ctx => ' '+ctx.dataset.label+': '+cur+Math.round(ctx.parsed.y).toLocaleString() }}},
+        scales:{
+          x:{ ticks:{color:tickC,font:{size:11},autoSkip:false,maxRotation:45}, grid:{color:gridC} },
+          y:{ ticks:{color:tickC,font:{size:11},callback:fmtK}, grid:{color:gridC} }
+        }
+      }
+    });
+
+  } catch(err) {
+    document.getElementById('loading-'+ei).style.display = 'none';
+    const errDiv = document.getElementById('error-'+ei);
+    errDiv.style.display = 'block';
+    errDiv.textContent = `⚠ Could not load data for "${e.ticker}". Try searching for the company name in the ticker field to get the correct symbol. Error: ${err.message}`;
+  }
+}
+
+function showTab(idx) {
+  document.querySelectorAll('.chart-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('panel-'+idx).classList.add('active');
+  document.getElementById('tab-'+idx).classList.add('active');
+}
+
+function resetResults() {
+  document.getElementById('results').classList.remove('visible');
+  document.getElementById('runBtn').textContent = 'Calculate → Show Charts';
+}
+
+buildCards();
+</script>
+</body>
+</html>
