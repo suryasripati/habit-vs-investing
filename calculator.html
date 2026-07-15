@@ -21,7 +21,11 @@ h1 { font-size: 22px; font-weight: 700; margin-bottom: 5px; color: #111; }
 .entries-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .entry-card { background: #fff; border: 1.5px solid #e5e5e5; border-radius: 16px; padding: 20px; transition: border-color .2s; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .entry-card.active { border-color: #d0d0d0; }
-.entry-card.disabled { opacity: .38; pointer-events: none; }
+.entry-card.disabled { opacity: .38; }
+.entry-card.disabled input,
+.entry-card.disabled select,
+.entry-card.disabled .autocomplete-list { pointer-events: none; }
+.entry-card.disabled .card-toggle { pointer-events: all; }
 .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
 .card-num { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: .07em; display:flex; align-items:center; gap:6px; }
 .color-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
